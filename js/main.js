@@ -61,8 +61,29 @@
     });
     let drawBoxes = () => {
       var whitePixels=0;
-      var threshold = 0.5;
+      var threshold = 5;
       var image = document.querySelectorAll('#wicked-science-visualization canvas')[0];
+      var pixelsThreshold = [];
+      var pixelsCount = 0;
+      for(var y=0; y<image.height; y++){
+        for(var x=0; x<image.width; x++){
+          var data = image.getContext('2d').getImageData(x, y, 1, 1).data;
+          data.forEach((elem, ind) => {
+            (pixelsThreshold[elem]) ? pixelsThreshold[elem].push(elem) : pixelsThreshold[elem] = [elem];
+            pixelsCount++;
+          });
+        }
+      }
+        var sixtyPercent = pixelsCount*0.6;
+        var thresholdCount = 0;
+        pixelsThreshold.forEach((elem, ind) => {
+            if(thresholdCount < sixtyPercent) {
+                thresholdCount += elem.length;
+                threshold = ind;
+            }
+        });
+        threshold += 1;
+        console.log(threshold);
       var pixels = [];
       for(var y=0; y<image.height; y++){
         for(var x=0; x<image.width; x++){
@@ -150,7 +171,7 @@
   window.onload = () => {
     
     // Define the path and options
-    var path = '/data/hi0280150.fits';
+    var path = '/data/hi0350021.fits';
     var opts = {el: 'wicked-science-visualization'};
     
     // Initialize the FITS file, passing the function getImage as a callback
