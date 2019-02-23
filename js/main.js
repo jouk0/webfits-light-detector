@@ -83,7 +83,6 @@
             }
         });
         threshold += 1;
-        console.log(threshold);
       var pixels = [];
       for(var y=0; y<image.height; y++){
         for(var x=0; x<image.width; x++){
@@ -108,6 +107,7 @@
       let lastY = 0;
       let stars = [];
       let count = 0;
+      /*
       pixels.forEach((elem, ind) => {
         if(lastX === 0 && lastY === 0) {
           lastX = elem.x;
@@ -123,20 +123,56 @@
             || elem.y === (lastY+7)
             || elem.y === (lastY+8)
             || elem.y === (lastY+9)
-            || elem.y === (lastY+10)) {
+            || elem.y === (lastY+10)
+            || elem.y === (lastY+11)
+            || elem.y === (lastY+12)
+            || elem.y === (lastY+13)
+            || elem.y === (lastY+14)
+            || elem.y === (lastY+15)
+            || elem.y === (lastY+16)
+            || elem.y === (lastY+17)
+            || elem.y === (lastY+18)) {
           if(stars[count] instanceof Array) {
             stars[count].push(elem);
           } else {
             stars[count] = [elem];
           }
           if(ind+1 < pixels.length) {
-            if((lastY+10) < pixels[ind+1].y || (lastX+10) < pixels[ind+1].x) {
+            if((lastY+18) < pixels[ind+1].y || (lastX+18) < pixels[ind+1].x) {
               count++;
               lastY = pixels[ind+1].y;
             }
           }
         }
       });
+      */
+      pixels.forEach((elem, ind) => {
+        let span = document.createElement('span');
+        let left = elem.x;
+        let top = elem.y;
+        let color = ['rgba(255,0,0, 0.5)', 'rgba(0,0,255, 0.5)', 'rgba(0,255,0, 0.5)'];
+        let colorArr = [elem.data[0],elem.data[1],elem.data[2]];
+        var colorNmbr = colorArr.reduce(function(a, b) {
+            return Math.max(a, b);
+        });
+        var colorpicker = 0;
+        colorArr.forEach((elem, ind) => {
+            if(elem === colorNmbr) {
+                colorpicker = ind;
+            }
+        });
+        console.log(colorNmbr);
+        span.style.left = left + "px";
+        span.style.top = top + "px";
+        span.style.width = "1px";
+        span.style.height = "1px";
+        span.style.border = "1px solid " + color[colorpicker];
+        span.style.position = "absolute"
+        span.style.borderRadius = "30% 50%";
+        span.style.boxSizing = "border-box"
+        document.querySelectorAll('div.analysis')[0].appendChild(span);
+      });
+      /*
       stars.forEach((elem, ind) => {
         let span = document.createElement('span');
         let left = 0;
@@ -161,8 +197,9 @@
         span.style.border = "1px solid rgba(255,255,255, 0.5)";
         span.style.position = "absolute"
         span.style.borderRadius = "30% 50%";
-        document.querySelectorAll('div.analysis')[0].appendChild(span);
+        //document.querySelectorAll('div.analysis')[0].appendChild(span);
       });
+      */
     };
     
     //drawBoxes();
