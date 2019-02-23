@@ -44,6 +44,7 @@
       img.height = 512;
       img.src = imgDataUrl;
       img.style.transform = "rotateY(-360deg)";
+      img.style.cssFloat = "left";
       document.querySelectorAll(dest)[0].appendChild(img);
     }
     drawImageFromCanvas('#wicked-science-visualization canvas', 'div.analysis');
