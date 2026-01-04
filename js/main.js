@@ -13,9 +13,97 @@
     // Asynchronously get pixels representing the image passing a callback and options
     dataunit.getFrame(0, createVisualization, opts);
   }
-  
-  // Define callback for when pixels have been read from file
   function createVisualization(arr, opts) {
+    const dataunit = opts.dataunit;
+    const width = dataunit.width;
+    const height = dataunit.height;
+    const extent = dataunit.getExtent(arr);
+
+    // Get the DOM elements
+    const container = document.querySelector('#' + opts.el);
+    const analysisContainer = document.querySelector('div.analysis');
+
+    // Initialize WebFITS
+    const webfits = new astro.WebFITS(container, 512);
+    webfits.setupControls();
+    webfits.loadImage('some-identifier', arr, width, height);
+    webfits.setExtent(extent[0], extent[1]);
+    webfits.setStretch('linear');
+
+    // Draw WebFITS canvas to another canvas for processing
+    const sourceCanvas = container.querySelector('canvas');
+    const processCanvas = document.createElement('canvas');
+    processCanvas.width = sourceCanvas.width;
+    processCanvas.height = sourceCanvas.height;
+    const ctx = processCanvas.getContext('2d');
+    ctx.drawImage(sourceCanvas, 0, 0);
+
+    const imgData = ctx.getImageData(0, 0, processCanvas.width, processCanvas.height);
+    const data = imgData.data;
+
+    // Calculate histogram and threshold for 60% dynamic black removal
+    const histogram = new Array(256).fill(0);
+    for(let i=0; i<data.length; i+=4){
+        const val = Math.max(data[i], data[i+1], data[i+2]);
+        histogram[val]++;
+    }
+
+    const totalPixels = processCanvas.width * processCanvas.height;
+    let sum = 0;
+    let threshold = 0;
+    for(let i=0; i<256; i++){
+        sum += histogram[i];
+        if(sum > 0.6*totalPixels){
+            threshold = i;
+            break;
+        }
+    }
+
+    // Optional log stretch function
+    const logStretch = (val) => Math.log(1 + val) / Math.log(1 + 255) * 255;
+
+    // Draw stars directly to analysis canvas
+    const outCanvas = document.createElement('canvas');
+    outCanvas.width = processCanvas.width;
+    outCanvas.height = processCanvas.height;
+    analysisContainer.appendChild(outCanvas);
+    const outCtx = outCanvas.getContext('2d');
+
+    outCtx.clearRect(0, 0, outCanvas.width, outCanvas.height);
+    outCtx.fillStyle = 'white';
+
+    for(let y=0; y<processCanvas.height; y++){
+        for(let x=0; x<processCanvas.width; x++){
+            const idx = (y * processCanvas.width + x) * 4;
+            let r = data[idx];
+            let g = data[idx+1];
+            let b = data[idx+2];
+            let alpha = data[idx+3];
+
+            // Apply threshold and log stretch
+            r = r >= threshold ? logStretch(r) : 0;
+            g = g >= threshold ? logStretch(g) : 0;
+            b = b >= threshold ? logStretch(b) : 0;
+
+            if((r || g || b) && alpha === 255){
+                // Choose dominant color for visualization
+                const maxColor = Math.max(r,g,b);
+                let color = 'white';
+                if(maxColor === r) color = 'rgba(255,0,0,0.6)';
+                else if(maxColor === g) color = 'rgba(0,255,0,0.6)';
+                else if(maxColor === b) color = 'rgba(0,0,255,0.6)';
+
+                outCtx.fillStyle = color;
+                outCtx.fillRect(x, y, 1, 1);
+            }
+        }
+    }
+
+    console.log('Valopikseleiden piirto valmis');
+}
+
+  // Define callback for when pixels have been read from file
+  function createVisualization_old(arr, opts) {
     var dataunit = opts.dataunit;
     
     var width = dataunit.width;
