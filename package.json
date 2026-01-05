@@ -1,0 +1,35 @@
+{
+  "name": "webfits-light-detector",
+  "version": "1.0.0",
+  "description": "A javascript library to visualize astronomical images and detect light particles from the FITS images on a web browser.",
+  "homepage": "https://github.com/jouk0/webfits-light-detector#readme",
+  "bugs": {
+    "url": "https://github.com/jouk0/webfits-light-detector/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jouk0/webfits-light-detector.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "axios": "^1.13.2",
+    "express": "^5.2.1",
+    "fs": "^0.0.1-security",
+    "fs-extra": "^11.3.3",
+    "helmet": "^8.1.0",
+    "mast-api": "^1.1.9",
+    "multer": "^2.0.2",
+    "node-fetch": "^2.7.0",
+    "path": "^0.12.7",
+    "progress-stream": "^2.0.0"
+  }
+}
