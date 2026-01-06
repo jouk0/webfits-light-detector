@@ -1,4 +1,4 @@
-
+/* Perusbody */
 body {
   background: #F3F3F3;
   margin: 0;
@@ -6,59 +6,54 @@ body {
   border-top: 3px solid #0071e5;
   font-family: "HelveticaNeue-Light", "Helvetica Neue Light", "Helvetica Neue", Helvetica, Arial, "Lucida Grande", sans-serif; 
   font-weight: 200;
+  color: #000;
 }
 
 .content {
-  margin: 20px;
-}
-.content header {
-
-}
-.visualization {
-  display: inline-block;
+  margin: 20px auto;
+  max-width: 1200px;
 }
 
-canvas {
-  cursor: crosshair;
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  background-color: black;
+header {
+  margin-bottom: 20px;
 }
 
-canvas:active {
-  cursor: move;
+header h2, header h3 {
+  margin: 5px 0;
+}
+
+button {
+  padding: 8px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-top: 10px;
 }
 
 progress {
-  margin: 20px 10%;
-  width: 80%;
-}
-#canvas-container {
+  margin: 20px 0;
+  width: 100%;
+  max-width: 400px;
   display: block;
-  float: left;
 }
-.analysis {
-  display: block;
-  float: left;
-  margin-left: 0 !important;
-}
+
+/* Layout */
 .fits-panel {
-  display: block;
-  float: left;
+  display: inline-block;
+  vertical-align: top;
+  width: 100%;
   max-width: 400px;
   background: #161b22;
   border-radius: 10px;
   padding: 1.5rem;
   box-shadow: 0 0 0 1px #30363d;
   margin-bottom: 20px;
+  color: white;
 }
 
 .fits-panel h2 {
   margin-top: 0;
   font-size: 1.2rem;
   letter-spacing: 0.04em;
-  color: white;
 }
 
 .fits-grid {
@@ -94,24 +89,12 @@ progress {
   word-break: break-all;
 }
 
-/* Responsive */
-@media (max-width: 600px) {
-  .fits-row {
-    grid-template-columns: 1fr;
-  }
-}
-
-#stats div {
-  margin: 4px 0;
-}
-
+/* Sectionit */
 section {
   margin-top: 20px;
   padding: 12px;
   background: #151a24;
   border-radius: 6px;
-}
-section * {
   color: white;
 }
 
@@ -119,4 +102,123 @@ pre {
   background: #0e1220;
   padding: 10px;
   overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+canvas {
+  cursor: crosshair;
+  user-select: none;
+  background-color: black;
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 10px 0;
+}
+
+canvas:active {
+  cursor: move;
+}
+
+/* Originaali ja analyysi-layout */
+#canvas-container, .analysis {
+  display: inline-block;
+  vertical-align: top;
+  margin-right: 10px;
+}
+
+.analysis canvas {
+  transform: rotateX(180deg);
+}
+
+/* Pixel stats */
+#stats div {
+  margin: 4px 0;
+}
+
+/* Responsive */
+@media (max-width: 800px) {
+  #canvas-container, .analysis, .fits-panel {
+    display: block;
+    width: 100%;
+    margin: 0 0 20px 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .fits-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Print-tyylit */
+@media print {
+  body {
+    background: #fff !important;
+    color: #000 !important;
+    margin: 0.5cm;
+    font-weight: normal;
+  }
+
+  header, button, progress {
+    display: none !important;
+  }
+
+  .content {
+    margin: 0;
+    max-width: 100%;
+  }
+
+  section {
+    page-break-inside: avoid;
+    background: none !important;
+    border-radius: 0 !important;
+    padding: 0;
+    margin-bottom: 15px;
+    color: #000 !important;
+  }
+
+  .fits-panel {
+    float: none !important;
+    max-width: 100% !important;
+    background: none !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .fits-row {
+    background: none !important;
+    border-radius: 0 !important;
+    padding: 2px 0 !important;
+    font-size: 12pt !important;
+  }
+
+  .fits-key, .fits-value {
+    color: #000 !important;
+  }
+
+  pre {
+    background: none !important;
+    color: #000 !important;
+    border: none;
+    padding: 0;
+    font-size: 12pt;
+  }
+
+  canvas {
+    max-width: 100% !important;
+    height: auto !important;
+    border: 1px solid #000 !important;
+  }
+
+  #canvas-container, .analysis {
+    float: none !important;
+    display: block !important;
+    margin: 0 !important;
+    transform: none !important;
+  }
+
+  .analysis canvas {
+    transform: rotateX(0deg) !important;
+  }
 }
