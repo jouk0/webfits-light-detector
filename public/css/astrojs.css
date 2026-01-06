@@ -100,3 +100,23 @@ progress {
     grid-template-columns: 1fr;
   }
 }
+
+#stats div {
+  margin: 4px 0;
+}
+
+section {
+  margin-top: 20px;
+  padding: 12px;
+  background: #151a24;
+  border-radius: 6px;
+}
+section * {
+  color: white;
+}
+
+pre {
+  background: #0e1220;
+  padding: 10px;
+  overflow-x: auto;
+}

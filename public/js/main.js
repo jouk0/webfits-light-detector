@@ -718,87 +718,366 @@ function readFitsBlob(blob) {
       reader.readAsArrayBuffer(blob);
   });
 }
+function analyzePixels(pixels2D) {
+  const flat = pixels2D.flat();
+
+  const n = flat.length;
+  let min = Infinity, max = -Infinity, sum = 0;
+
+  for (const v of flat) {
+    if (v < min) min = v;
+    if (v > max) max = v;
+    sum += v;
+  }
+
+  const mean = sum / n;
+
+  const variance =
+    flat.reduce((a, v) => a + (v - mean) ** 2, 0) / n;
+  const std = Math.sqrt(variance);
+
+  const sorted = [...flat].sort((a, b) => a - b);
+  const median = sorted[Math.floor(n / 2)];
+
+  const snr = mean / std;
+
+  const stats = document.getElementById('stats');
+  stats.innerHTML = `
+    <div>Pixels: ${n.toLocaleString()}</div>
+    <div>Min: ${min}</div>
+    <div>Max: ${max}</div>
+    <div>Mean: ${mean.toFixed(2)}</div>
+    <div>Median: ${median}</div>
+    <div>Std Dev: ${std.toFixed(2)}</div>
+    <div>Dynamic Range: ${(max - min)}</div>
+    <div>Estimated SNR: ${snr.toFixed(2)}</div>
+  `;
+}
+function findMinMax(flat) {
+  let min = Infinity;
+  let max = -Infinity;
+
+  for (let i = 0; i < flat.length; i++) {
+    const v = flat[i];
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  return { min, max };
+}
+function drawImage(pixels2D) {
+  const h = pixels2D.length;
+  const w = pixels2D[0].length;
+
+  const canvas = document.getElementById('imageCanvas');
+  canvas.width = w;
+  canvas.height = h;
+
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(w, h);
+
+  const flat = pixels2D.flat();
+  const { min, max } = findMinMax(flat);
+
+  const range = max - min || 1;
+
+  let i = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const v = pixels2D[y][x];
+      const norm = Math.floor(((v - min) / range) * 255);
+
+      img.data[i++] = norm;
+      img.data[i++] = norm;
+      img.data[i++] = norm;
+      img.data[i++] = 255;
+    }
+  }
+
+  ctx.putImageData(img, 0, 0);
+}
+
+function drawHistogram(pixels2D) {
+  const height = pixels2D.length;
+  const width = pixels2D[0].length;
+
+  let min = Infinity;
+  let max = -Infinity;
+
+  // 1) Etsi min ja max turvallisesti
+  for (let y = 0; y < height; y++) {
+    const row = pixels2D[y];
+    for (let x = 0; x < width; x++) {
+      const v = row[x];
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+  }
+
+  const range = max - min || 1;
+
+  // 2) Histogrammi (256 bin)
+  const bins = new Uint32Array(256);
+
+  for (let y = 0; y < height; y++) {
+    const row = pixels2D[y];
+    for (let x = 0; x < width; x++) {
+      const v = row[x];
+      const idx = Math.floor(((v - min) / range) * 255);
+      bins[idx]++;
+    }
+  }
+
+  // 3) Piirto
+  const canvas = document.getElementById('histCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  let maxCount = 0;
+  for (let i = 0; i < bins.length; i++) {
+    if (bins[i] > maxCount) maxCount = bins[i];
+  }
+
+  const w = canvas.width / bins.length;
+
+  ctx.fillStyle = '#9fd3ff';
+  for (let i = 0; i < bins.length; i++) {
+    const h = (bins[i] / maxCount) * canvas.height;
+    ctx.fillRect(i * w, canvas.height - h, w, h);
+  }
+  return { bins, min, max };
+}
+
+function renderSample(pixels2D) {
+  const sample = pixels2D
+    .slice(0, 10)
+    .map(row => row.slice(0, 10).join('\t'))
+    .join('\n');
+
+  document.getElementById('sampleOutput').textContent = sample;
+}
+function describeHistogram(analysis) {
+  const lines = [];
+
+  lines.push(
+    `Taustataivaan huippu sijaitsee intensiteetissä noin ${analysis.peakIntensity}.`
+  );
+
+  if (analysis.tailRatio > 0.05) {
+    lines.push(
+      'Histogrammissa on selkeä oikealle ulottuva häntä, mikä viittaa tähtiin tai kirkkaisiin kohteisiin.'
+    );
+  } else {
+    lines.push(
+      'Histogrammi on lähes symmetrinen ilman selkeää oikeaa häntää, mikä viittaa pääosin taustakohinaan.'
+    );
+  }
+
+  if (analysis.saturationRatio > 0.001) {
+    lines.push(
+      'Kuvassa esiintyy saturaatiota; kirkkaimmat pikselit ovat leikkautuneet.'
+    );
+  } else {
+    lines.push(
+      'Kuvassa ei ole merkittävää saturaatiota.'
+    );
+  }
+
+  if (analysis.backgroundWidth < 20) {
+    lines.push(
+      'Taustataivas on kapea, mikä viittaa matalaan kohinatasoon.'
+    );
+  } else {
+    lines.push(
+      'Taustataivas on leveä, mikä viittaa kohinaan tai väärään venytykseen.'
+    );
+  }
+
+  return lines.join('\n');
+}
+function analyzeHistogram(bins, min, max) {
+  const totalPixels = bins.reduce((a, b) => a + b, 0);
+  const binCount = bins.length;
+
+  let peakBin = 0;
+  let peakValue = 0;
+
+  for (let i = 0; i < binCount; i++) {
+    if (bins[i] > peakValue) {
+      peakValue = bins[i];
+      peakBin = i;
+    }
+  }
+
+  const peakIntensity =
+    min + (peakBin / (binCount - 1)) * (max - min);
+
+  // Häntä oikealle (signaali)
+  let tailPixels = 0;
+  for (let i = Math.floor(binCount * 0.75); i < binCount; i++) {
+    tailPixels += bins[i];
+  }
+
+  const tailRatio = tailPixels / totalPixels;
+
+  // Saturaatio
+  const saturationRatio = bins[binCount - 1] / totalPixels;
+
+  // Taustaleveys (karkeasti)
+  let backgroundWidth = 0;
+  for (let i = 0; i < binCount; i++) {
+    if (bins[i] > peakValue * 0.1) backgroundWidth++;
+  }
+
+  return {
+    peakIntensity: peakIntensity.toFixed(1),
+    tailRatio,
+    saturationRatio,
+    backgroundWidth,
+    totalPixels
+  };
+}
+function runFitsAnalysis(header, pixels2D) {
+  analyzePixels(pixels2D);
+  drawImage(pixels2D);
+
+  const histogramResult = drawHistogram(pixels2D);
+  if (histogramResult) {
+    const { bins, min, max } = histogramResult;
+    const analysis = analyzeHistogram(bins, min, max);
+    const description = describeHistogramExtended(analysis, header);
+    document.getElementById('histogramAnalysis').textContent = description;
+    //const text = describeHistogram(analysis);
+    //document.getElementById('histogramAnalysis').textContent = text;
+  }
+
+  renderSample(pixels2D);
+}
+function renderFitsHeader(data, targetId) {
+  const container = document.getElementById(targetId);
+  container.innerHTML = "";
+
+  Object.entries(data).forEach(([key, value]) => {
+    const row = document.createElement("div");
+    row.className = "fits-row";
+
+    const k = document.createElement("div");
+    k.className = "fits-key";
+    k.textContent = key;
+
+    const v = document.createElement("div");
+    v.className = "fits-value";
+    v.textContent = value;
+
+    row.appendChild(k);
+    row.appendChild(v);
+    container.appendChild(row);
+  });
+}
+function describeHistogramExtended(analysis, header) {
+  const lines = [];
+
+  lines.push(
+    `Taustataivaan huippu intensiteetissä noin ${analysis.peakIntensity}.`
+  );
+
+  if (analysis.tailRatio > 0.05) {
+    lines.push(
+      'Histogrammissa on oikealle ulottuva häntä, mikä viittaa kirkkaisiin kohteisiin, kuten tähtiin tai galakseihin.'
+    );
+  } else {
+    lines.push(
+      'Histogrammi on symmetrinen ilman selkeää häntää, viittaa pääosin taustakohinaan.'
+    );
+  }
+
+  if (analysis.saturationRatio > 0.001) {
+    lines.push(
+      'Kuvassa esiintyy saturaatiota; kirkkaimmat pikselit ovat leikkautuneet.'
+    );
+  } else {
+    lines.push('Kuvassa ei ole merkittävää saturaatiota.');
+  }
+
+  if (analysis.backgroundWidth < 20) {
+    lines.push(
+      'Taustataivas on kapea, mikä viittaa matalaan kohinatasoon.'
+    );
+  } else {
+    lines.push(
+      'Taustataivas on leveä, mikä viittaa kohinaan tai väärään venytykseen.'
+    );
+  }
+
+  // ---- Lisätään suodatin/kemiallinen arvio ----
+  if (header.BANDPASS) {
+    switch(header.BANDPASS.toUpperCase()) {
+      case "Hα":
+        lines.push(
+          'Kuva on Hα-suodattimella: kirkkaat alueet sisältävät todennäköisesti ionisoitunutta vetyä.'
+        );
+        break;
+      case "OIII":
+        lines.push(
+          'Kuva on OIII-suodattimella: kirkkaat alueet viittaavat happi-ionisoitumiseen.'
+        );
+        break;
+      case "SII":
+        lines.push(
+          'Kuva on SII-suodattimella: kirkkaat alueet viittaavat rikki-ionisoitumiseen.'
+        );
+        break;
+      default:
+        lines.push(`Kuva on suodattimella ${header.BANDPASS}, tarkempaa kemiallista analyysiä ei voida päätellä.`);
+    }
+  }
+
+  return lines.join('\n');
+}
 
 btn.onclick = async () => {
   try {
-    // ----------- 1️⃣ Satunnainen koordinaatti ----------------
+    // 1️⃣ Satunnainen koordinaatti
     const { ra, dec, size } = randomCutoutParams();
     const url = `/fits?ra=${ra}&dec=${dec}&size=${size}`;
 
-    // ----------- 2️⃣ Hae FITS blob ----------------------------
+    // 2️⃣ Hae FITS blob
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const blob = await resp.blob();
-    readFitsHeaderFromBlob(blob).then(header => {
-      console.log(header);
-      function renderFitsHeader(data, targetId) {
-        const container = document.getElementById(targetId);
-        container.innerHTML = "";
-      
-        Object.entries(data).forEach(([key, value]) => {
-          const row = document.createElement("div");
-          row.className = "fits-row";
-      
-          const k = document.createElement("div");
-          k.className = "fits-key";
-          k.textContent = key;
-      
-          const v = document.createElement("div");
-          v.className = "fits-value";
-          v.textContent = value;
-      
-          row.appendChild(k);
-          row.appendChild(v);
-          container.appendChild(row);
-        });
-      }
-      renderFitsHeader(header, "fitsHeader");
-    });
-    let pixels2DStored;
-    readFitsBlob(blob).then(async ({ header, pixels2D }) => {
-      console.log('FITS header:', header);
-      console.log('Pikselien 2D-taulukko:', pixels2D);
-      // Esim: ensimmäinen pikseli
-      console.log('Top-left pixel:', pixels2D[0][0]);
-    }).catch(err => {
-      console.error('Virhe FITS-tiedoston lukemisessa:', err);
-    });
-    // ----------- 3️⃣ Tyhjennä canvas-container ---------------
+
+    // 3️⃣ Header (kevyt)
+    const header = await readFitsHeaderFromBlob(blob);
+    renderFitsHeader(header, "fitsHeader");
+
+    // 4️⃣ Koko FITS (header + pixels)
+    const { header: fullHeader, pixels2D } = await readFitsBlob(blob);
+
+    console.log('FITS header:', fullHeader);
+    console.log('Pixels:', pixels2D[0][0]);
+
+    // 5️⃣ AJA KAIKKI ANALYYSIT TÄSSÄ
+    runFitsAnalysis(fullHeader, pixels2D);
+
+    // 6️⃣ Tyhjennä ja piirrä astro.js viewer (jos haluat)
     const container = document.getElementById('canvas-container');
     container.innerHTML = '';
+    new astro.FITS(blob, getImage, { el: 'canvas-container' });
 
-    // ----------- 4️⃣ Luo FITS-olio ja anna getImage käsitellä ---
-    const fits = new astro.FITS(blob, getImage, { el: 'canvas-container' });
-    // 2️⃣ Luo FormData ja lähetä backendille tallennettavaksi
+    // 7️⃣ Tallenna backendille
     const formData = new FormData();
-    // Anna tiedostolle nimi esim. ra-dec.fits
     const filename = `fits_${ra}_${dec}.fits`;
     formData.append('fitsFile', blob, filename);
 
-    // Lähetä tiedosto Node.js / Express endpointtiin
     const uploadResponse = await fetch('/upload-fits', {
       method: 'POST',
       body: formData
     });
+
     if (uploadResponse.ok) {
-      console.log('FITS kuva tallennettu.')
+      console.log('FITS kuva tallennettu.');
     }
+
   } catch (err) {
-    console.error('FITS fetch / render failed:', err);
+    console.error('FITS fetch / analysis failed:', err);
   }
 };
-
-
-
-  window.onload = () => {
-    
-    // Define the path and options
-    var path = '/data/hi0350021.fits';
-    var opts = {el: 'wicked-science-visualization'};
-    
-    // Initialize the FITS file, passing the function getImage as a callback
-    var FITS = astro.FITS;
-    //var f = new FITS(path, getImage, opts);
-    //fetchNewFITS();
-    //fetchAndShow();
-  };
