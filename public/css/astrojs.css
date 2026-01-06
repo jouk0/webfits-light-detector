@@ -51,6 +51,8 @@ progress {
 }
 
 .fits-panel h2 {
+  display: block;
+  float: left;
   margin-top: 0;
   font-size: 1.2rem;
   letter-spacing: 0.04em;
@@ -61,6 +63,7 @@ progress {
   grid-template-columns: 1fr;
   gap: 6px;
   margin-top: 1rem;
+  float: left;
 }
 
 .fits-row {
@@ -91,13 +94,22 @@ progress {
 
 /* Sectionit */
 section {
+  display: block;
+  float: left;
+  width: 100%;
   margin-top: 20px;
   padding: 12px;
   background: #151a24;
   border-radius: 6px;
   color: white;
 }
-
+section h2 {
+  display: block;
+  float: left;
+  margin: 0;
+  padding: 10px 0;
+  width: 100%;
+}
 pre {
   background: #0e1220;
   padding: 10px;
@@ -124,11 +136,19 @@ canvas:active {
 #canvas-container, .analysis {
   display: inline-block;
   vertical-align: top;
-  margin-right: 10px;
 }
-
+.analysis {
+  background-color: #000;
+  position: relative;
+  display: block;
+  float: left;
+  width: 100%;
+  height: 535px;
+  transform: scaleX(1) scaleY(-1);
+}
 .analysis canvas {
-  transform: rotateX(180deg);
+  display: none;
+  visibility: hidden;
 }
 
 /* Pixel stats */
@@ -141,7 +161,6 @@ canvas:active {
   #canvas-container, .analysis, .fits-panel {
     display: block;
     width: 100%;
-    margin: 0 0 20px 0;
   }
 }
 
@@ -154,71 +173,16 @@ canvas:active {
 /* Print-tyylit */
 @media print {
   body {
-    background: #fff !important;
-    color: #000 !important;
-    margin: 0.5cm;
     font-weight: normal;
   }
-
   header, button, progress {
     display: none !important;
   }
+  .uusi-sivu-jalkeen {
+    /* Vanhempi tapa, tuki kaikissa selaimissa */
+    page-break-after: always;
 
-  .content {
-    margin: 0;
-    max-width: 100%;
-  }
-
-  section {
-    page-break-inside: avoid;
-    background: none !important;
-    border-radius: 0 !important;
-    padding: 0;
-    margin-bottom: 15px;
-    color: #000 !important;
-  }
-
-  .fits-panel {
-    float: none !important;
-    max-width: 100% !important;
-    background: none !important;
-    padding: 0 !important;
-    box-shadow: none !important;
-  }
-
-  .fits-row {
-    background: none !important;
-    border-radius: 0 !important;
-    padding: 2px 0 !important;
-    font-size: 12pt !important;
-  }
-
-  .fits-key, .fits-value {
-    color: #000 !important;
-  }
-
-  pre {
-    background: none !important;
-    color: #000 !important;
-    border: none;
-    padding: 0;
-    font-size: 12pt;
-  }
-
-  canvas {
-    max-width: 100% !important;
-    height: auto !important;
-    border: 1px solid #000 !important;
-  }
-
-  #canvas-container, .analysis {
-    float: none !important;
-    display: block !important;
-    margin: 0 !important;
-    transform: none !important;
-  }
-
-  .analysis canvas {
-    transform: rotateX(0deg) !important;
+    /* Nykyisempi standardi */
+    break-after: page;
   }
 }
