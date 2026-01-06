@@ -7,8 +7,9 @@ A javascript library to visualize astronomical images and detect light particles
 ![alt text](https://raw.githubusercontent.com/jouk0/webfits-light-detector/master/img/screenshot.png)
 
 ## Setup
-
+### Install dependencies
 npm i
+### Start web server
 node webfits-light-detector-server.js
-
+### Open product site
 Open web broser at http://127.0.0.1:3000
