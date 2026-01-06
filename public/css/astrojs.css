@@ -11,7 +11,9 @@ body {
 .content {
   margin: 20px;
 }
+.content header {
 
+}
 .visualization {
   display: inline-block;
 }
@@ -31,4 +33,70 @@ canvas:active {
 progress {
   margin: 20px 10%;
   width: 80%;
+}
+#canvas-container {
+  display: block;
+  float: left;
+}
+.analysis {
+  display: block;
+  float: left;
+  margin-left: 0 !important;
+}
+.fits-panel {
+  display: block;
+  float: left;
+  max-width: 400px;
+  background: #161b22;
+  border-radius: 10px;
+  padding: 1.5rem;
+  box-shadow: 0 0 0 1px #30363d;
+  margin-bottom: 20px;
+}
+
+.fits-panel h2 {
+  margin-top: 0;
+  font-size: 1.2rem;
+  letter-spacing: 0.04em;
+  color: white;
+}
+
+.fits-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin-top: 1rem;
+}
+
+.fits-row {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 12px;
+  padding: 6px 10px;
+  background: #0d1117;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.fits-row:hover {
+  background: #1f2933;
+}
+
+.fits-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #58a6ff;
+  white-space: nowrap;
+}
+
+.fits-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #c9d1d9;
+  word-break: break-all;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .fits-row {
+    grid-template-columns: 1fr;
+  }
 }

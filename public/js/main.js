@@ -731,37 +731,58 @@ btn.onclick = async () => {
     const blob = await resp.blob();
     readFitsHeaderFromBlob(blob).then(header => {
       console.log(header);
+      function renderFitsHeader(data, targetId) {
+        const container = document.getElementById(targetId);
+        container.innerHTML = "";
+      
+        Object.entries(data).forEach(([key, value]) => {
+          const row = document.createElement("div");
+          row.className = "fits-row";
+      
+          const k = document.createElement("div");
+          k.className = "fits-key";
+          k.textContent = key;
+      
+          const v = document.createElement("div");
+          v.className = "fits-value";
+          v.textContent = value;
+      
+          row.appendChild(k);
+          row.appendChild(v);
+          container.appendChild(row);
+        });
+      }
+      renderFitsHeader(header, "fitsHeader");
     });
     let pixels2DStored;
     readFitsBlob(blob).then(async ({ header, pixels2D }) => {
       console.log('FITS header:', header);
       console.log('Pikselien 2D-taulukko:', pixels2D);
-
-      // ----------- 3️⃣ Tyhjennä canvas-container ---------------
-      const container = document.getElementById('canvas-container');
-      container.innerHTML = '';
-
-      // ----------- 4️⃣ Luo FITS-olio ja anna getImage käsitellä ---
-      const fits = new astro.FITS(blob, getImage, { el: 'canvas-container' });
-      // 2️⃣ Luo FormData ja lähetä backendille tallennettavaksi
-      const formData = new FormData();
-      // Anna tiedostolle nimi esim. ra-dec.fits
-      const filename = `fits_${ra}_${dec}.fits`;
-      formData.append('fitsFile', blob, filename);
-
-      // Lähetä tiedosto Node.js / Express endpointtiin
-      const uploadResponse = await fetch('/upload-fits', {
-        method: 'POST',
-        body: formData
-      });
-      if (uploadResponse.ok) {
-        console.log('FITS kuva tallennettu.')
-      }
       // Esim: ensimmäinen pikseli
       console.log('Top-left pixel:', pixels2D[0][0]);
     }).catch(err => {
       console.error('Virhe FITS-tiedoston lukemisessa:', err);
     });
+    // ----------- 3️⃣ Tyhjennä canvas-container ---------------
+    const container = document.getElementById('canvas-container');
+    container.innerHTML = '';
+
+    // ----------- 4️⃣ Luo FITS-olio ja anna getImage käsitellä ---
+    const fits = new astro.FITS(blob, getImage, { el: 'canvas-container' });
+    // 2️⃣ Luo FormData ja lähetä backendille tallennettavaksi
+    const formData = new FormData();
+    // Anna tiedostolle nimi esim. ra-dec.fits
+    const filename = `fits_${ra}_${dec}.fits`;
+    formData.append('fitsFile', blob, filename);
+
+    // Lähetä tiedosto Node.js / Express endpointtiin
+    const uploadResponse = await fetch('/upload-fits', {
+      method: 'POST',
+      body: formData
+    });
+    if (uploadResponse.ok) {
+      console.log('FITS kuva tallennettu.')
+    }
   } catch (err) {
     console.error('FITS fetch / render failed:', err);
   }
