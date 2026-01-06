@@ -12,4 +12,4 @@ npm i
 ### Start web server
 node webfits-light-detector-server.js
 ### Open product site
-Open web broser at http://127.0.0.1:3000
+Open web broser at http://localhost:3000
