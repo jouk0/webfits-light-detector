@@ -4,7 +4,7 @@ A javascript library to visualize astronomical images and detect light particles
 
 ## Example view
 
-![alt text](https://raw.githubusercontent.com/jouk0/webfits-light-detector/master/img/screenshot.png)
+![alt text](https://raw.githubusercontent.com/jouk0/webfits-light-detector/master/public/img/screenshot.png)
 
 ## Setup
 ### Install dependencies
