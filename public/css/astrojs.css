@@ -1,5 +1,13 @@
 /* Perusbody */
+* {
+  box-sizing: border-box;
+}
+html {
+  margin: 0;
+  padding: 0;
+}
 body {
+  display: block;
   background: #F3F3F3;
   margin: 0;
   padding: 0;
@@ -10,10 +18,14 @@ body {
 }
 
 .content {
-  margin: 20px auto;
-  max-width: 1200px;
+  display: block;
+  float: left;
+  margin: 0;
+  padding: 0;
 }
-
+h1, h2, h3, h4, h5 {
+  text-align: center;
+}
 header {
   margin-bottom: 20px;
 }
@@ -41,7 +53,6 @@ progress {
   display: inline-block;
   vertical-align: top;
   width: 100%;
-  max-width: 400px;
   background: #161b22;
   border-radius: 10px;
   padding: 1.5rem;
@@ -59,18 +70,17 @@ progress {
 }
 
 .fits-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 6px;
+  display: block;
+  float: left;
   margin-top: 1rem;
   float: left;
 }
 
 .fits-row {
-  display: grid;
-  grid-template-columns: 180px 1fr;
-  gap: 12px;
-  padding: 6px 10px;
+  display: block;
+  float: left;
+  width: 33.33%;
+  padding: 6px 2.5px;
   background: #0d1117;
   border-radius: 6px;
   font-size: 0.85rem;
@@ -81,12 +91,18 @@ progress {
 }
 
 .fits-key {
+  display: block;
+  float: left;
+  width: 30%;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: #58a6ff;
   white-space: nowrap;
 }
 
 .fits-value {
+  display: block;
+  float: left;
+  width: 70%;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: #c9d1d9;
   word-break: break-all;
@@ -174,15 +190,27 @@ canvas:active {
 @media print {
   body {
     font-weight: normal;
+    background-color: #000;
   }
   header, button, progress {
     display: none !important;
+    visibility: hidden;
   }
-  .uusi-sivu-jalkeen {
-    /* Vanhempi tapa, tuki kaikissa selaimissa */
-    page-break-after: always;
-
-    /* Nykyisempi standardi */
-    break-after: page;
+  .content .page section {
+    display: block;
+    float: left;
+    margin: 0 0 20px !important;
+    margin-top: 0 !important;
+  }
+  .content section h2 {
+    margin: 0 !important;
+  }
+  .page {
+    display: block;
+    float: left;
+    width: 210mm;
+    height: 295mm;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 }

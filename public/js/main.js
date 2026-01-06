@@ -764,37 +764,6 @@ function findMinMax(flat) {
   }
   return { min, max };
 }
-function drawImage(pixels2D) {
-  const h = pixels2D.length;
-  const w = pixels2D[0].length;
-
-  const canvas = document.getElementById('imageCanvas');
-  canvas.width = w;
-  canvas.height = h;
-
-  const ctx = canvas.getContext('2d');
-  const img = ctx.createImageData(w, h);
-
-  const flat = pixels2D.flat();
-  const { min, max } = findMinMax(flat);
-
-  const range = max - min || 1;
-
-  let i = 0;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const v = pixels2D[y][x];
-      const norm = Math.floor(((v - min) / range) * 255);
-
-      img.data[i++] = norm;
-      img.data[i++] = norm;
-      img.data[i++] = norm;
-      img.data[i++] = 255;
-    }
-  }
-
-  ctx.putImageData(img, 0, 0);
-}
 
 function drawHistogram(pixels2D) {
   const height = pixels2D.length;
@@ -938,7 +907,6 @@ function analyzeHistogram(bins, min, max) {
 }
 async function runFitsAnalysis(header, pixels2D, blob) {
   analyzePixels(pixels2D);
-  drawImage(pixels2D);
 
   const histogramResult = drawHistogram(pixels2D);
   if (histogramResult) {
