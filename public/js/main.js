@@ -936,7 +936,7 @@ function analyzeHistogram(bins, min, max) {
     totalPixels
   };
 }
-function runFitsAnalysis(header, pixels2D) {
+async function runFitsAnalysis(header, pixels2D, blob) {
   analyzePixels(pixels2D);
   drawImage(pixels2D);
 
@@ -944,8 +944,23 @@ function runFitsAnalysis(header, pixels2D) {
   if (histogramResult) {
     const { bins, min, max } = histogramResult;
     const analysis = analyzeHistogram(bins, min, max);
-    const description = describeHistogramExtended(analysis, header);
-    document.getElementById('histogramAnalysis').textContent = description;
+
+    const { header, pixels2D, stats, brightPixels, totalPixels } = await analyzeFitsBlob(blob);
+
+    const analysis2 = {
+      peakIntensity: stats?.max ?? 0,
+      mean: stats?.mean ?? 0,
+      std: stats?.std ?? 0,
+      tailRatio: 0.1, // esim. lasketaan histogrammista
+      saturationRatio: 0.001, // esim. lasketaan
+      backgroundWidth: 15, // esim. lasketaan
+      brightPixels,
+      totalPixels
+    };
+
+    const description2 = describeHistogramSafe(analysis2, header);
+    //const description = describeHistogramExtendedV2(analysis, header);
+    document.getElementById('histogramAnalysis').textContent = description2;
     //const text = describeHistogram(analysis);
     //document.getElementById('histogramAnalysis').textContent = text;
   }
@@ -973,66 +988,197 @@ function renderFitsHeader(data, targetId) {
     container.appendChild(row);
   });
 }
-function describeHistogramExtended(analysis, header) {
+async function analyzeFitsBlob(blob) {
+  // 1️⃣ Lue header ja 2D pikselitaulukko
+  const { header, pixels2D } = await readFitsBlob(blob);
+
+  // 2️⃣ Laske pikselistatsit
+  let sum = 0, sumSq = 0, min = Infinity, max = -Infinity;
+  const brightPixels = [];
+  const height = pixels2D.length;
+  const width = pixels2D[0].length;
+  const totalPixels = height * width;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const v = pixels2D[y][x];
+      sum += v;
+      sumSq += v * v;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+  }
+
+  const mean = sum / totalPixels;
+  const std = Math.sqrt(sumSq / totalPixels - mean * mean);
+
+  // 3️⃣ Etsi kirkkaat kohteet (bright spots)
+  const threshold = mean + 3 * std;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (pixels2D[y][x] >= threshold) {
+        brightPixels.push({ x, y, value: pixels2D[y][x] });
+      }
+    }
+  }
+
+  // 4️⃣ Palauta data analysoituna
+  return {
+    header,
+    pixels2D,
+    stats: { min, max, mean, std, totalPixels },
+    brightPixels
+  };
+}
+
+function describeHistogramSafe(analysis, header) {
   const lines = [];
 
-  lines.push(
-    `Taustataivaan huippu intensiteetissä noin ${analysis.peakIntensity}.`
-  );
+  // 1️⃣ Perusstatistiikka
+  const peak = analysis?.peakIntensity ?? 'n/a';
+  const mean = analysis?.mean !== undefined ? analysis.mean.toFixed(1) : 'n/a';
+  const std = analysis?.std !== undefined ? analysis.std.toFixed(1) : 'n/a';
 
-  if (analysis.tailRatio > 0.05) {
-    lines.push(
-      'Histogrammissa on oikealle ulottuva häntä, mikä viittaa kirkkaisiin kohteisiin, kuten tähtiin tai galakseihin.'
-    );
+  lines.push(`Taustataivaan huippu intensiteetissä: ${peak}`);
+  lines.push(`Keskimääräinen kirkkaus: ${mean}, std: ${std}`);
+
+  // 2️⃣ Histogrammin häntä / muoto
+  const tailRatio = analysis?.tailRatio ?? 0;
+  if (tailRatio > 0.05) {
+    lines.push('Histogrammissa oikealle ulottuva häntä: kirkkaat kohteet, esim. tähdet tai galaksit.');
   } else {
-    lines.push(
-      'Histogrammi on symmetrinen ilman selkeää häntää, viittaa pääosin taustakohinaan.'
-    );
+    lines.push('Histogrammi lähes symmetrinen: pääosin taustakohinaa.');
   }
 
-  if (analysis.saturationRatio > 0.001) {
-    lines.push(
-      'Kuvassa esiintyy saturaatiota; kirkkaimmat pikselit ovat leikkautuneet.'
-    );
+  // 3️⃣ Saturaatiot
+  const saturation = analysis?.saturationRatio ?? 0;
+  if (saturation > 0.001) {
+    lines.push('Kuvassa esiintyy saturaatiota: kirkkaimmat pikselit leikkautuneet.');
   } else {
-    lines.push('Kuvassa ei ole merkittävää saturaatiota.');
+    lines.push('Ei merkittävää saturaatiota.');
   }
 
-  if (analysis.backgroundWidth < 20) {
-    lines.push(
-      'Taustataivas on kapea, mikä viittaa matalaan kohinatasoon.'
-    );
+  // 4️⃣ Taustaleveys
+  const bgWidth = analysis?.backgroundWidth ?? 0;
+  if (bgWidth < 20) {
+    lines.push('Taustataivas kapea → matala kohinataso.');
   } else {
-    lines.push(
-      'Taustataivas on leveä, mikä viittaa kohinaan tai väärään venytykseen.'
-    );
+    lines.push('Taustataivas leveä → mahdollinen kohina tai väärä venytys.');
   }
 
-  // ---- Lisätään suodatin/kemiallinen arvio ----
-  if (header.BANDPASS) {
-    switch(header.BANDPASS.toUpperCase()) {
+  // 5️⃣ Bright spots analyysi
+  const brightPixels = analysis?.brightPixels ?? [];
+  const totalPixels = analysis?.totalPixels ?? 1; // välttää nollalla jakamisen
+  if (brightPixels.length > 0) {
+    const ratio = ((brightPixels.length / totalPixels) * 100).toFixed(2);
+    lines.push(`Kirkkaimpia pikseleitä: ${brightPixels.length} (~${ratio}% kuvasta).`);
+    if (ratio > 5) lines.push('Voidaan olettaa useita tähtiä tai galakseja.');
+  }
+
+  // 6️⃣ BANDPASS / kemiallinen arvio
+  const bandpass = header?.BANDPASS?.toUpperCase();
+  if (bandpass) {
+    switch (bandpass) {
       case "Hα":
-        lines.push(
-          'Kuva on Hα-suodattimella: kirkkaat alueet sisältävät todennäköisesti ionisoitunutta vetyä.'
-        );
+        lines.push('Hα-suodatin: kirkkaat alueet sisältävät todennäköisesti ionisoitunutta vetyä.');
         break;
       case "OIII":
-        lines.push(
-          'Kuva on OIII-suodattimella: kirkkaat alueet viittaavat happi-ionisoitumiseen.'
-        );
+        lines.push('OIII-suodatin: kirkkaat alueet viittaavat happi-ionisoitumiseen.');
         break;
       case "SII":
-        lines.push(
-          'Kuva on SII-suodattimella: kirkkaat alueet viittaavat rikki-ionisoitumiseen.'
-        );
+        lines.push('SII-suodatin: kirkkaat alueet viittaavat rikki-ionisoitumiseen.');
         break;
       default:
-        lines.push(`Kuva on suodattimella ${header.BANDPASS}, tarkempaa kemiallista analyysiä ei voida päätellä.`);
+        lines.push(`Suodatin ${bandpass}: tarkempaa kemiallista analyysiä ei voida päätellä.`);
     }
+  }
+
+  // 7️⃣ Altistusaika
+  const exptime = parseFloat(header?.EXPTIME);
+  if (!isNaN(exptime)) {
+    if (exptime > 300) {
+      lines.push(`Pitkä altistusaika (${exptime}s) → heikkoja kohteita näkyvissä.`);
+    } else {
+      lines.push(`Lyhyt altistusaika (${exptime}s) → vain kirkkaimmat kohteet näkyvissä.`);
+    }
+  }
+
+  // 8️⃣ Kohteen nimi
+  const objName = header?.OBJECT;
+  if (objName) {
+    lines.push(`Kohde: ${objName}`);
   }
 
   return lines.join('\n');
 }
+
+function describeHistogramExtendedV2(analysis, header) {
+  const lines = [];
+
+  // Taustataivas
+  lines.push(`Taustataivaan huippu intensiteetissä noin ${analysis.peakIntensity}.`);
+  lines.push(`Keskimääräinen kirkkaus: ${analysis.mean.toFixed(1)}, std: ${analysis.std.toFixed(1)}.`);
+
+  // Histogrammin häntä
+  if (analysis.tailRatio > 0.05) {
+    lines.push('Histogrammissa oikealle ulottuva häntä: kirkkaat kohteet, kuten tähdet tai galaksit.');
+  } else {
+    lines.push('Histogrammi lähes symmetrinen: pääosin taustakohinaa.');
+  }
+
+  // Saturaatiot
+  if (analysis.saturationRatio > 0.001) {
+    lines.push('Kuvassa saturaatiota: kirkkaimmat pikselit leikkautuneet.');
+  } else {
+    lines.push('Ei merkittävää saturaatiota.');
+  }
+
+  // Taustaleveys
+  if (analysis.backgroundWidth < 20) {
+    lines.push('Taustataivas kapea → matala kohinataso.');
+  } else {
+    lines.push('Taustataivas leveä → mahdollinen kohina tai väärä venytys.');
+  }
+
+  // Bright spots analyysi
+  if (analysis.brightPixels && analysis.brightPixels.length > 0) {
+    const ratio = (analysis.brightPixels.length / analysis.totalPixels * 100).toFixed(2);
+    lines.push(`Kirkkaimpia pikseleitä: ${analysis.brightPixels.length} (~${ratio}% kuvasta).`);
+    if (ratio > 5) lines.push('Voidaan olettaa useita tähtiä tai galakseja.');
+  }
+
+  // Suodatin/kemiallinen arvio
+  if (header.BANDPASS) {
+    switch(header.BANDPASS.toUpperCase()) {
+      case "Hα":
+        lines.push('Hα-suodatin: kirkkaat alueet sisältävät ionisoitunutta vetyä.');
+        break;
+      case "OIII":
+        lines.push('OIII-suodatin: kirkkaat alueet viittaavat happi-ionisoitumiseen.');
+        break;
+      case "SII":
+        lines.push('SII-suodatin: kirkkaat alueet viittaavat rikki-ionisoitumiseen.');
+        break;
+      default:
+        lines.push(`Suodatin ${header.BANDPASS}: tarkempaa kemiallista analyysiä ei voida päätellä.`);
+    }
+  }
+
+  // Altistusaika
+  if (header.EXPTIME) {
+    const t = parseFloat(header.EXPTIME);
+    if (t > 300) lines.push(`Pitkä altistusaika (${t}s) → heikkoja kohteita näkyvissä.`);
+    else lines.push(`Lyhyt altistusaika (${t}s) → vain kirkkaimmat kohteet näkyvissä.`);
+  }
+
+  // Kohteen nimi
+  if (header.OBJECT) {
+    lines.push(`Kohde: ${header.OBJECT}`);
+  }
+
+  return lines.join('\n');
+}
+
 
 btn.onclick = async () => {
   try {
@@ -1056,7 +1202,7 @@ btn.onclick = async () => {
     console.log('Pixels:', pixels2D[0][0]);
 
     // 5️⃣ AJA KAIKKI ANALYYSIT TÄSSÄ
-    runFitsAnalysis(fullHeader, pixels2D);
+    runFitsAnalysis(fullHeader, pixels2D, blob);
 
     // 6️⃣ Tyhjennä ja piirrä astro.js viewer (jos haluat)
     const container = document.getElementById('canvas-container');
