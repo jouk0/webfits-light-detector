@@ -4,6 +4,8 @@ const path = require('path');
 const fetch = require('node-fetch');
 const fs = require('fs')
 const multer = require('multer');
+const { PNG } = require('pngjs');
+const { Worker } = require('worker_threads');
 const {
     fetchWithRetry,
     sendFits,
@@ -40,18 +42,20 @@ const upload = multer({
 });
 // Helmet lisää HTTP-suojausotsikot
 app.use(
-    helmet({
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          scriptSrc: ["'self'", "blob:"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
-          workerSrc: ["'self'", "blob:"],
-          imgSrc: ["'self'", "data:"]
-        }
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        connectSrc: ["'self'", "blob:"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"], // 🔑
+        imgSrc: ["'self'", "data:"],
+        workerSrc: ["'self'", "blob:"]
       }
-    })
-  );
+    }
+  })
+);
+
 
 // Staattiset tiedostot kansiosta "public"
 app.use(express.static(path.join(__dirname, 'public')));
@@ -66,52 +70,155 @@ app.post('/upload-fits', upload.single('fitsFile'), (req, res) => {
       path: req.file.path
     });
 });
-const localFitsPath = path.join(__dirname, 'public/data', 'hi0350021.fits');
 
-// ----------------------------------------------------------------
-// /fits endpoint
-// ----------------------------------------------------------------
-app.get('/fits', async (req, res) => {
-  // ----------------------------------------------------------------
-  // 1) Parse query parameters (provide sensible defaults)
-  // ----------------------------------------------------------------
-  const ra   = req.query.ra   || '43.56';
-  const dec  = req.query.dec  || '-19.571';
-  const size = req.query.size || '0.05';   // degrees, used by all services
+// -------------------------
+// Helper functions
+// -------------------------
 
-  // ----------------------------------------------------------------
-  // 2) Build the ordered source list
-  // ----------------------------------------------------------------
-  const sources = buildSources({ ra, dec, size });
+async function fetchBuffer(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+  const arrayBuffer = await res.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
 
-  // ----------------------------------------------------------------
-  // 3) Try each source until we succeed
-  // ----------------------------------------------------------------
-  for (const src of sources) {
-    try {
-      console.log(`🔎 Trying ${src.id} …`);
-      // src.getUrl() may return a simple string or it may do extra HTTP calls.
-      const fitsUrl = await src.getUrl();
-      console.log(fitsUrl)
+function parseFits(buffer) {
+  const header = {};
+  let offset = 0;
 
-      // `fetchWithRetry` returns a **Readable stream**.
-      const fitsStream = await fetchWithRetry(fitsUrl, 4, 6_000_000);
+  while (true) {
+    const card = buffer.toString('ascii', offset, offset + 80);
+    offset += 80;
 
-      // Pipe straight to the client – we keep the original filename if possible
-      const filename = path.basename(new URL(fitsUrl).pathname) || `${src.id}.fits`;
-      console.log('sendFits funktio kutsu')
-      return sendFits(res, fitsStream, filename);
-    } catch (err) {
-      console.warn(`❌ ${src.id} failed: ${err.message}`);
-      // continue to next source
-    }
+    const key = card.substring(0, 8).trim();
+    let value = card.substring(10, 80).trim();
+
+    // Poistetaan kaikki "/" ja sen jälkeinen osa
+    if (value.includes('/')) value = value.split('/')[0].trim();
+
+    if (key) header[key] = value;
+    if (key === 'END') break;
   }
 
-  // ----------------------------------------------------------------
-  // 5) Nothing worked → 500
-  // ----------------------------------------------------------------
-  res.status(500).send('All FITS fetch attempts failed');
+  // align to 2880
+  offset = Math.ceil(offset / 2880) * 2880;
+
+  const width  = Number(header.NAXIS1);
+  const height = Number(header.NAXIS2);
+  const bitpix = Number(header.BITPIX);
+
+  if (isNaN(width) || isNaN(height)) {
+    throw new Error(`Invalid FITS header: NAXIS1=${header.NAXIS1}, NAXIS2=${header.NAXIS2}`);
+  }
+
+  const pixelCount = width * height;
+  let data;
+
+  if (bitpix === 16) {
+    data = new Float32Array(pixelCount);
+    for (let i = 0; i < pixelCount; i++) {
+      data[i] = buffer.readInt16BE(offset + i * 2);
+    }
+  } else if (bitpix === 32) {
+    data = new Float32Array(pixelCount);
+    for (let i = 0; i < pixelCount; i++) {
+      data[i] = buffer.readInt32BE(offset + i * 4);
+    }
+  } else {
+    throw new Error(`Unsupported BITPIX: ${bitpix}`);
+  }
+
+  return { header, width, height, data };
+}
+
+
+function writeFits(header, width, height, data) {
+  if (isNaN(width) || isNaN(height)) {
+    throw new Error(`Invalid width/height: width=${width}, height=${height}`);
+  }
+  if (!data || data.length !== width * height) {
+    throw new Error(`Data length mismatch: expected ${width * height}, got ${data ? data.length : 0}`);
+  }
+
+  const cards = [];
+
+  function card(k, v) {
+    return (k.padEnd(8) + '= ' + v.toString().padEnd(70)).slice(0, 80);
+  }
+
+  // Käydään alkuperäinen header läpi ja lisätään kaikki kortit
+  for (const [k, v] of Object.entries(header)) {
+    if (k === 'END') continue; // lopetetaan loppukortti lisätään myöhemmin
+    cards.push(card(k, v));
+  }
+
+  // Pakollinen END-kortti FITS:iin
+  cards.push(card('END', ''));
+
+  // Täytetään 2880-byte lohkot
+  let headerBlock = cards.join('');
+  const pad = 2880 - (headerBlock.length % 2880);
+  headerBlock += ' '.repeat(pad);
+
+  const headerBuffer = Buffer.from(headerBlock, 'ascii');
+
+  const dataBuffer = Buffer.alloc(width * height * 4);
+  for (let i = 0; i < data.length; i++) {
+    dataBuffer.writeFloatBE(data[i], i * 4);
+  }
+
+  return Buffer.concat([headerBuffer, dataBuffer]);
+}
+
+
+
+// -------------------------
+// /fits endpoint
+// -------------------------
+
+app.get('/fits', async (req, res) => {
+  const ra     = req.query.ra   || '43.56';
+  const dec    = req.query.dec  || '-19.571';
+  const size   = req.query.size || '0.05';
+
+  try {
+    const sources = buildSources({ ra, dec, size, stackN: 4 });
+    const src = sources[0];
+    const urls = await src.getUrls(4);
+
+    // Käynnistetään worker
+    const worker = new Worker(path.join(__dirname, 'fitsWorker.js'), {
+      workerData: { urls }
+    });
+
+    worker.on('message', (msg) => {
+      if (msg.success) {
+        res.setHeader('Content-Type', 'application/fits');
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="${src.id}_2x2.fits"`
+        );
+        res.send(msg.data);
+      } else {
+        res.status(500).send(`Worker failed: ${msg.error}`);
+      }
+    });
+
+    worker.on('error', (err) => {
+      console.error('Worker error:', err);
+      res.status(500).send(`Worker crashed: ${err.message}`);
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(`FITS fetch/stack failed: ${err.message}`);
+  }
 });
+
+
+
+
+
 // Esimerkkireitti JSON-API:lle (tarvittaessa)
 app.get('/api/status', (req, res) => {
     res.json({ status: 'ok', timestamp: Date.now() });

@@ -50,8 +50,8 @@ progress {
 
 /* Layout */
 .fits-panel {
-  display: inline-block;
-  vertical-align: top;
+  display: block;
+  float: left;
   width: 100%;
   background: #161b22;
   border-radius: 10px;
@@ -73,14 +73,13 @@ progress {
   display: block;
   float: left;
   margin-top: 1rem;
-  float: left;
 }
 
 .fits-row {
   display: block;
   float: left;
   width: 33.33%;
-  padding: 6px 2.5px;
+  padding: 1px 2.5px;
   background: #0d1117;
   border-radius: 6px;
   font-size: 0.85rem;
@@ -94,6 +93,7 @@ progress {
   display: block;
   float: left;
   width: 30%;
+  font-size: 9px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: #58a6ff;
   white-space: nowrap;
@@ -103,11 +103,16 @@ progress {
   display: block;
   float: left;
   width: 70%;
+  font-size: 9px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: #c9d1d9;
   word-break: break-all;
 }
-
+#fitsHeader {
+  display: block;
+  float: left;
+  width: 100%;
+}
 /* Sectionit */
 section {
   display: block;
@@ -176,13 +181,13 @@ canvas:active {
 @media (max-width: 800px) {
   #canvas-container, .analysis, .fits-panel {
     display: block;
+    float: left;
     width: 100%;
   }
 }
 
 @media (max-width: 600px) {
   .fits-row {
-    grid-template-columns: 1fr;
   }
 }
 
@@ -208,9 +213,22 @@ canvas:active {
   .page {
     display: block;
     float: left;
-    width: 210mm;
-    height: 295mm;
+    width: 210mm !important;
+    height: 295mm !important;
     margin: 0 !important;
     padding: 0 !important;
   }
+}
+
+.page {
+  display: none;
+  visibility: hidden;
+  margin: 0 auto;
+  width: 210mm;
+  height: auto;
+  padding: 0 !important;
+}
+.page.active {
+  display: block !important;
+  visibility: visible !important;
 }

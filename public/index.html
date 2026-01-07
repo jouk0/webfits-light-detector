@@ -6,16 +6,12 @@
   <meta name="description" content="Detects light particles from FITS file image.">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="/css/astrojs.css" type="text/css" charset="utf-8">
-  <script type="text/javascript" src="/lib/fits.js"></script>
-  <script type="text/javascript" src="/lib/webfits-canvas.js"></script>
-  
-  
 </head>
 
 <body>
   <div class='content'>
     <header>
-      <h3>Single WebFITS Instance (Canvas)</h3>
+      <h1>FitsAnalyzer</h1>
       <h2>Hae uusi FITS-kuva</h2>
       <button id="fetch-btn">Hae kuva</button>
       <progress id="prog" value="0" max="1" style="display: none; visibility: hidden;"></progress>
@@ -46,18 +42,11 @@
     </div>
     <div class="page">
       <section>
-        <h2>Originaali .fits kuva</h2>
+        <h2>Light enhanced fits image</h2>
         <div id="canvas-container" style="float: left;"></div>
-      </section>
-    </div>
-    <div class="page">
-      <section>
-        <h2>Valon vaihvistettu kuva</h2>
-        <div class="analysis"></div>
       </section>
     </div>
   </div>
   <script type="text/javascript" src="/js/main.js"></script>
-  <script src="/lib/caman.full.min.js"></script>
 </body>
 </html>
