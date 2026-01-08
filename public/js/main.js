@@ -85,6 +85,17 @@ btn.onclick = async () => {
 
     const blob = await response.blob();
     console.log('FITS blob size:', blob.size);
+
+    // --------------------------------------------------------------
+    // 3️⃣ Header → parsinta & UI‑näyttö
+    // --------------------------------------------------------------
+    const headerData = await readFitsHeaderFromBlob(blob);   // → object (avain → string)
+    renderFitsHeader(headerData, headerContainer);           // aikaisempi "rivi‑lista"
+
+    // Uusi “tiivis” metatieto‑paneeli
+    const metaInfo = extractUsefulHeaderInfo(headerData);
+    renderFitsMeta(metaInfo);      // <div id="fitsMeta"></div> näyttää tiedot
+
     // 2️⃣ Luo FormData ja lähetä backendille tallennettavaksi
     const formData = new FormData();
     // Anna tiedostolle nimi esim. ra-dec.fits
@@ -103,9 +114,6 @@ btn.onclick = async () => {
       const data = await uploadResponse.json();
       console.log('Upload successful:', data);
     }
-    // 3️⃣ Header
-    const headerData = await readFitsHeaderFromBlob(blob);
-    renderFitsHeader(headerData, headerContainer);   // <-- yksi renderöinti
 
     // 4️⃣ Data
     const { pixels2D, width, height, bitpix } = await readFitsBlob(blob);
@@ -123,7 +131,7 @@ btn.onclick = async () => {
 
     // 5️⃣ Analyysi
     await runFitsAnalysis(JSON.parse(JSON.stringify(headerData)), pixels2D, blob);
-
+    let widthAndHeight = a4SizeFromWidth(width)
     // 6️⃣ Renderöinti (Canvas)
     // Käytetään globaalia RENDER_OPTIONS‑objektia, eikä luoda uutta
     renderFloatFitsToCanvasImproved(
@@ -134,12 +142,20 @@ btn.onclick = async () => {
       RENDER_OPTIONS
     );
 
-    console.log('FITS valmis');
-
     let pageElements = document.querySelectorAll('.page')
     pageElements.forEach((page) => {
       page.classList.add('active')
     })
+// --------------------------------------------------------------
+    // 8️⃣ Nimilabelit (numeroita tai SIMBAD‑nimet)
+    // --------------------------------------------------------------
+    // 8a) Jos haluat vain numerot:
+    const { brightPixels } = await analyzeFitsBlob(blob);
+    // HUOM! Liikaa lappuja TODO
+    //renderStarLabels(document.querySelectorAll('#canvas-container canvas')[0], brightPixels, headerData, { useNames: false });
+
+    console.log('FITS valmis');
+
   } catch (err) {
     console.error('FITS fetch / render failed:', err);
     alert(err.message);
@@ -148,6 +164,282 @@ btn.onclick = async () => {
     btn.textContent = 'Hae FITS';
   }
 };
+
+/**
+ * Aseta canvas‑elementti A4‑suhteeseen.
+ * Jos annetaan vain lyhyt sivu (leveys) mm‑yksiköllä,
+ * palautetaan myös korkeus mm‑yksiköllä.
+ *
+ * @param {number} shortSide   Lyhyen sivun pituus (mm)
+ * @returns {{width: number, height: number}}  Koko mm‑yksikössä
+ */
+function a4SizeFromWidth(shortSide) {
+  const height = shortSide * Math.SQRT2;   // √2‑kertoimella
+  return { width: shortSide, height };
+}
+/* --------------------------------------------------------------
+   1) FITS‑header‑parser
+   ------------------------------------------------------------ */
+function parseFitsHeader(rawHeader) {
+  // Jos on jo objekti, palauta sellaisenaan
+  if (rawHeader && typeof rawHeader === 'object' && !Array.isArray(rawHeader)) {
+    return rawHeader;
+  }
+  const header = {};
+  const txt = String(rawHeader);
+  for (let i = 0; i < txt.length; i += 80) {
+    const card = txt.slice(i, i + 80);
+    const key = card.slice(0, 8).trim();
+    const val = card.slice(10).split('/')[0].trim();
+    if (key) header[key] = val;
+    if (key === 'END') break;
+  }
+  return header;
+}
+
+/* --------------------------------------------------------------
+   2) Astrometriset apufunktiot
+   ------------------------------------------------------------ */
+// HH MM SS.s → deg (RA * 15)
+function raToDeg(str) {
+  const s = cleanHeaderValue(str);
+  // Jos on pelkkä luku → arvo on jo asteina (harvoin)
+  if (!s.includes(' ')) return parseFloat(s);
+  const [h = 0, m = 0, sec = 0] = s.split(/\s+/).map(Number);
+  // RA on tunnissa → kerrotaan 15 (1h = 15°)
+  return (h + m / 60 + sec / 3600) * 15;
+}
+
+function decToDeg(str) {
+  const s = cleanHeaderValue(str);
+  // DECI‑arvot voivat alkaa +/- – säilytetään
+  const sign = s.trim().startsWith('-') ? -1 : 1;
+  const numeric = s.replace(/[+\-]/g, '').trim();    // poista +/-
+  if (!numeric.includes(' ')) return sign * parseFloat(numeric);
+  const [d = 0, m = 0, sec = 0] = numeric.split(/\s+/).map(Number);
+  return sign * (d + m / 60 + sec / 3600);
+}
+/**
+ * Poistaa FITS‑headerin mahdolliset lainausmerkit, 
+ * lainausmerkkien lisäksi &nbsp;‑, ©‑, ’‑ characters, 
+ * sekä kaikki muut ei‑numeeriset / whitespace‑merkit.
+ *
+ * @param {string} val  Header‑arvo (ra, dec, date …)
+ * @returns {string}     Puhdas, parsittava merkkijono
+ */
+function cleanHeaderValue(val) {
+  if (typeof val !== 'string') return val;           // jos on jo number → palauta
+  // 1) Poista aloitus‑ ja loppusulut (yksi- tai kaksi‑merkkiä)
+  let cleaned = val.replace(/^'+|'+$/g, '');
+
+  // 2) Jos on muita “erikoisia” lainausmerkkejä (’, ‘, “, ”), poista ne
+  cleaned = cleaned.replace(/[‘’“”]/g, '');
+
+  // 3) Poista mahdolliset trailing‑kommentit (FITSin “/”‑kommentti on jo leikattu ennen)
+  //    (ei pakollinen, mutta varmuuden vuoksi)
+  cleaned = cleaned.trim();
+
+  // 4) Jos arvo sisältää vain numeroita, numerot palaavat oikein.
+  return cleaned;
+}
+function extractUsefulHeaderInfo(rawHeader) {
+  const hdr = parseFitsHeader(rawHeader);
+
+  // ==== RA / DEC ====
+  let raDeg = null;
+  let decDeg = null;
+
+  if (hdr.OBJCTRA && hdr.OBJCTDEC) {
+    raDeg  = raToDeg(hdr.OBJCTRA);
+    decDeg = decToDeg(hdr.OBJCTDEC);
+  } else if (hdr.RA && hdr.DEC) {
+    raDeg  = raToDeg(hdr.RA);
+    decDeg = decToDeg(hdr.DEC);
+  } else if (hdr.CRVAL1 && hdr.CRVAL2) {
+    // Jos WCS‑header antaa suoraan asteina, käytetään sellaisenaan
+    raDeg  = +hdr.CRVAL1;
+    decDeg = +hdr.CRVAL2;
+  }
+
+  // ... (loput metatietojen poiminta pysyy samana) ...
+
+  return {
+    // muu metadata …
+    raDeg,
+    decDeg,
+    // …
+  };
+}
+
+// ISO‑date (YYYY‑MM‑DD[T]hh:mm:ss) → JS‑Date (UTC)
+function fitsDateToJS(dateStr) {
+  if (dateStr.includes('T')) return new Date(dateStr + 'Z');
+  return new Date(dateStr + 'T00:00:00Z');
+}
+
+/* --------------------------------------------------------------
+   3) WCS‑pixel → taivaankoordinaatti (asteina)
+   ------------------------------------------------------------ */
+function pixelToWorld(x, y, hdr) {
+  const crval1 = +hdr.CRVAL1;
+  const crval2 = +hdr.CRVAL2;
+  const crpix1 = +hdr.CRPIX1;
+  const crpix2 = +hdr.CRPIX2;
+  const cd11 = hdr.CD1_1 !== undefined ? +hdr.CD1_1 : (+hdr.CDELT1 || 0);
+  const cd12 = hdr.CD1_2 !== undefined ? +hdr.CD1_2 : 0;
+  const cd21 = hdr.CD2_1 !== undefined ? +hdr.CD2_1 : 0;
+  const cd22 = hdr.CD2_2 !== undefined ? +hdr.CD2_2 : (+hdr.CDELT2 || 0);
+
+  // FITS‑indeksit ovat 1‑pohjaisia → korjaus JavaScriptiin
+  const dx = (x + 1) - crpix1;
+  const dy = (y + 1) - crpix2;
+
+  const ra  = crval1 + dx * cd11 + dy * cd12;
+  const dec = crval2 + dx * cd21 + dy * cd22;
+  return { ra, dec };
+}
+
+/* --------------------------------------------------------------
+   4) Header‑metadata‑kokoelma (halutut arvot)
+   ------------------------------------------------------------ */
+function extractUsefulHeaderInfo(rawHeader) {
+  const hdr = parseFitsHeader(rawHeader);
+
+  // Perusinfo
+  const objectName = hdr.OBJECT || '—';
+  const dateObs    = hdr['DATE-OBS'] ? fitsDateToJS(hdr['DATE-OBS']) : null;
+  const exposure   = hdr.EXPOSURE ? parseFloat(hdr.EXPOSURE) :
+                     (hdr.EXPTIME ? parseFloat(hdr.EXPTIME) : null);
+
+  const telescope = hdr.TELESCOP   || '—';
+  const instrument = hdr.INSTRUME  || '—';
+  const filter    = hdr.FILTER   || hdr.BANDPASS || '—';
+  const emulsion  = hdr.EMULSION || '—';
+  const plateID   = hdr.PLATEID  || '—';
+
+  // RA/DEC – useita mahdollisia avaimia
+  let raDeg  = null;
+  let decDeg = null;
+  if (hdr.OBJCTRA && hdr.OBJCTDEC) {
+    raDeg  = raToDeg(hdr.OBJCTRA);
+    decDeg = decToDeg(hdr.OBJCTDEC);
+  } else if (hdr.RA && hdr.DEC) {
+    raDeg  = raToDeg(hdr.RA);
+    decDeg = decToDeg(hdr.DEC);
+  } else if (hdr.CRVAL1 && hdr.CRVAL2) {
+    raDeg  = +hdr.CRVAL1;
+    decDeg = +hdr.CRVAL2;
+  }
+
+  // Pixel‑skaala (arcsec/pixel) – käyttämällä CD‑ tai CDELT‑arvoja
+  let pixelScaleArcsec = null;
+  if (hdr.CD1_1 && hdr.CD2_2) {
+    const a1 = Math.abs(+hdr.CD1_1);
+    const a2 = Math.abs(+hdr.CD2_2);
+    pixelScaleArcsec = ((a1 + a2) / 2) * 3600;
+  } else if (hdr.CDELT1 && hdr.CDELT2) {
+    const a1 = Math.abs(+hdr.CDELT1);
+    const a2 = Math.abs(+hdr.CDELT2);
+    pixelScaleArcsec = ((a1 + a2) / 2) * 3600;
+  }
+
+  const airmass = hdr.AIRMASS ? parseFloat(hdr.AIRMASS) : null;
+
+  // Palautetaan “tiivis” info‑objekti
+  return {
+    objectName,
+    dateObs,
+    exposure,
+    telescope,
+    instrument,
+    filter,
+    emulsion,
+    plateID,
+    raDeg,
+    decDeg,
+    pixelScaleArcsec,
+    airmass,
+    headerRaw: hdr               // jos haluat myöhemmin lvl‑tason tietoja
+  };
+}
+
+/* --------------------------------------------------------------
+   5) UI‑renderöinti: tiivis metatieto‑paneeli
+   ------------------------------------------------------------ */
+function renderFitsMeta(info) {
+  const container = document.getElementById('fitsMeta'); // <div id="fitsMeta"></div>
+  if (!container) return;
+  console.log(info)
+  const html = `
+    <div><strong>Kohde:</strong> ${info.objectName}</div>
+    <div><strong>Obs. päivä:</strong> ${info.headerRaw.DATE}</div>
+    <div><strong>Eksposiitti:</strong> ${info.exposure ? info.exposure + ' s' : '–'}</div>
+    <div><strong>Teleskooppi:</strong> ${info.telescope}</div>
+    <div><strong>Instrumentti:</strong> ${info.instrument}</div>
+    <div><strong>Suodatin:</strong> ${info.filter}</div>
+    <div><strong>Emulsio:</strong> ${info.emulsion}</div>
+    <div><strong>Plate‑ID:</strong> ${info.plateID}</div>
+    <div><strong>RA (deg):</strong> ${info.raDeg ? info.raDeg.toFixed(5) : '–'}</div>
+    <div><strong>DEC (deg):</strong> ${info.decDeg ? info.decDeg.toFixed(5) : '–'}</div>
+    <div><strong>Pixel‑skaala:</strong> ${info.pixelScaleArcsec ? info.pixelScaleArcsec.toFixed(3) + '″/px' : '–'}</div>
+    <div><strong>Airmass:</strong> ${info.airmass ?? '–'}</div>
+  `;
+  container.innerHTML = html;
+}
+
+/* --------------------------------------------------------------
+   6) Tähtien nimeäminen (valinnainen SIMBAD‑haku)
+   ------------------------------------------------------------ */
+async function fetchStarNames(brightPixels, hdr) {
+  const nameMap = {};
+  for (const p of brightPixels) {
+    const { ra, dec } = pixelToWorld(p.x, p.y, hdr);
+    // SIMBAD‑kysely: halve‑arc‑minute (0.01 deg) säde riittää
+    const query = `https://cdsweb.u-strasbg.fr/cgi-bin/nph-sesame/-oxp/SNV?%20${ra}%20${dec}`;
+    try {
+      const resp = await fetch(`https://cors-anywhere.herokuapp.com/${query}`);
+      const txt = await resp.text();
+      const nameMatch = txt.match(/<NAME>([^<]+)<\/NAME>/i);
+      if (nameMatch) nameMap[`${p.x},${p.y}`] = nameMatch[1];
+    } catch (e) {
+      console.warn('SIMBAD‑haku epäonnistui pisteelle', p, e);
+    }
+  }
+  return nameMap;
+}
+
+/* --------------------------------------------------------------
+   7) Piirrä nimi‑/numero‑labelit canvasiin
+   ------------------------------------------------------------ */
+function renderStarLabels(canvas, brightPixels, hdr, options = {}, nameMap = {}) {
+  const ctx = canvas.getContext('2d');
+
+  const cfg = {
+    font: '12px sans-serif',
+    color: '#ff0',
+    offsetX: 6,
+    offsetY: -8,
+    useNames: false,          // jos true, käyttää nameMap‑arvoja
+    ...options
+  };
+
+  ctx.font = cfg.font;
+  ctx.fillStyle = cfg.color;
+  ctx.textBaseline = 'top';
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+
+  brightPixels.forEach((p, idx) => {
+    const label = cfg.useNames && nameMap[`${p.x},${p.y}`]
+        ? nameMap[`${p.x},${p.y}`]
+        : `#${idx + 1}`;
+
+    const x = p.x + cfg.offsetX;
+    const y = p.y + cfg.offsetY;
+    ctx.strokeText(label, x, y);
+    ctx.fillText(label, x, y);
+  });
+}
 
 // ---------------------------------------------------------------------------
 // --------------------------- ANALYSIS / RENDERING -------------------------

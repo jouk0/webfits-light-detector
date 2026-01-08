@@ -232,3 +232,13 @@ canvas:active {
   display: block !important;
   visibility: visible !important;
 }
+
+.fits-meta{
+  background:#111;
+  color:#ddd;
+  font-family:monospace;
+  padding:0.8rem;
+  margin-top:0.5rem;
+  border-radius:4px;
+}
+.fits-meta div{ margin-bottom:0.3rem; }

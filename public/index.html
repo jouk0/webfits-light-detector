@@ -2,24 +2,47 @@
 <html class="no-js" lang="fi">
 <head>
   <meta charset="utf-8">
-  <title>webFits-light-detector</title>
-  <meta name="description" content="Detects light particles from FITS file image.">
+  <base href="/">
+  <title>FitsImageAnalyzer</title>
+  <meta name="description" content="FitsAnalyzer analysoi .fits tähtikartta kuvasi tarkalla analyysillä.">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="/css/astrojs.css" type="text/css" charset="utf-8">
+  <link rel="icon" type="image/png" href="/img/linkShare.png">
+
+
+  <meta property="og:title" content="FitsAnalyzer">
+  <meta property="og:type" content="article"/>
+  <meta property="og:image" content="/img/linkShare.png">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <!--  Non-Essential, But Recommended -->
+  <meta property="og:description" content="FitsImageAnalyzer analysoi .fits tähtikartta kuvasi tarkalla analyysillä.">
+  <meta property="og:site_name" content="FitsImageAnalyzer">
+  <meta name="twitter:image:alt" content="FitsImageAnalyzer">
+  <meta name="description" content="FitsImageAnalyzer analysoi .fits tähtikartta kuvasi tarkalla analyysillä.">
+  <meta name="keywords" content="fits, space images, stars, image, analysis, image enhancers">
+  <meta name="author" content="Copyright © 2026 FitsImageAnalyzer">
 </head>
 
 <body>
   <div class='content'>
     <header>
-      <h1>FitsAnalyzer</h1>
+      <h1>FitsImageAnalyzer</h1>
       <h2>Hae uusi FITS-kuva</h2>
       <button id="fetch-btn">Hae kuva</button>
-      <progress id="prog" value="0" max="1" style="display: none; visibility: hidden;"></progress>
     </header>
+
+    <div class="page">
+      <section>
+        <h2>Valon vahvistettu .FITS kuva</h2>
+        <div id="canvas-container" style="float: left;"></div>
+      </section>
+    </div>
     <div class="page">
       <section class="fits-panel">
-        <h2>FITS Header Metadata</h2>
+        <h2>FITS Otsakkeet Metadata</h2>
         <div id="fitsHeader" class="fits-grid"></div>
+        <div id="fitsMeta" class="fits-meta"></div>
       </section>
       <section>
         <h2>Pixel Data Summary</h2>
@@ -38,12 +61,6 @@
       <section>
         <h2>Pixel Sample (10×10)</h2>
         <pre id="sampleOutput"></pre>
-      </section>
-    </div>
-    <div class="page">
-      <section>
-        <h2>Light enhanced fits image</h2>
-        <div id="canvas-container" style="float: left;"></div>
       </section>
     </div>
   </div>
