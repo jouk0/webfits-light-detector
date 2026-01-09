@@ -117,6 +117,42 @@ btn.onclick = async () => {
 
     // 4️⃣ Data
     const { pixels2D, width, height, bitpix } = await readFitsBlob(blob);
+    const image1D = new Float64Array(width * height);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        image1D[y * width + x] = pixels2D[y][x];
+      }
+    }
+    function computeNoiseStats(image) {
+      let sum = 0, sum2 = 0;
+      const n = image.length;
+    
+      for (let i = 0; i < n; i++) {
+        sum += image[i];
+        sum2 += image[i] * image[i];
+      }
+    
+      const mean = sum / n;
+      const variance = sum2 / n - mean * mean;
+    
+      return {
+        mean,
+        std: Math.sqrt(Math.max(variance, 0))
+      };
+    }
+    // ⭐ Noise
+    const noiseStats = computeNoiseStats(image1D);
+
+    // ⭐ Source detection
+    const stars = detectSources(image1D, width, height, noiseStats);
+
+    console.log(`Detected ${stars.length} stars`);
+    
+    const measuredStars = stars.map(star =>
+      aperturePhotometry(image1D, width, height, star)
+    );
+    
+    console.log('Photometry done:', measuredStars.length);
 
     console.log('FITS loaded:', width, height, 'BITPIX:', bitpix);
 
@@ -850,4 +886,114 @@ function reshape2D(flat, w, h) {
   const out = [];
   for (let y = 0; y < h; y++) out.push(flat.slice(y * w, (y + 1) * w));
   return out;
+}
+
+function detectSources(image, width, height, noiseStats) {
+  const { mean, std } = noiseStats;
+  const threshold = mean + 5 * std;
+
+  const sources = [];
+  const visited = new Uint8Array(width * height);
+
+  function index(x, y) {
+    return y * width + x;
+  }
+
+  function floodFill(x0, y0) {
+    const stack = [[x0, y0]];
+    let sumFlux = 0, sumX = 0, sumY = 0, count = 0;
+
+    while (stack.length) {
+      const [x, y] = stack.pop();
+      if (x < 0 || y < 0 || x >= width || y >= height) continue;
+
+      const i = index(x, y);
+      if (visited[i]) continue;
+      if (image[i] < threshold) continue;
+
+      visited[i] = 1;
+      const flux = image[i];
+
+      sumFlux += flux;
+      sumX += x * flux;
+      sumY += y * flux;
+      count++;
+
+      stack.push([x+1,y], [x-1,y], [x,y+1], [x,y-1]);
+    }
+
+    if (count < 5) return null; // poistaa kosmiset säteet
+
+    return {
+      x: sumX / sumFlux,
+      y: sumY / sumFlux,
+      flux: sumFlux,
+      pixels: count
+    };
+  }
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = index(x, y);
+      if (!visited[i] && image[i] > threshold) {
+        const star = floodFill(x, y);
+        if (star) sources.push(star);
+      }
+    }
+  }
+
+  return sources;
+}
+function aperturePhotometry(image, width, height, star, rA = 4, rIn = 6, rOut = 10) {
+  let starFlux = 0;
+  let bgFlux = 0;
+  let bgCount = 0;
+
+  for (let y = Math.floor(star.y - rOut); y <= star.y + rOut; y++) {
+    for (let x = Math.floor(star.x - rOut); x <= star.x + rOut; x++) {
+      if (x < 0 || y < 0 || x >= width || y >= height) continue;
+
+      const dx = x - star.x;
+      const dy = y - star.y;
+      const r = Math.sqrt(dx*dx + dy*dy);
+      const v = image[y * width + x];
+
+      if (r <= rA) {
+        starFlux += v;
+      } else if (r >= rIn && r <= rOut) {
+        bgFlux += v;
+        bgCount++;
+      }
+    }
+  }
+
+  const bgMean = bgCount > 0 ? bgFlux / bgCount : 0;
+  const netFlux = starFlux - bgMean * Math.PI * rA * rA;
+
+  return {
+    ...star,
+    netFlux
+  };
+}
+function buildLightCurves(frames) {
+  const curves = {};
+
+  frames.forEach(frame => {
+    frame.stars.forEach(star => {
+      if (!curves[star.id]) curves[star.id] = [];
+      curves[star.id].push({
+        time: frame.time,
+        flux: star.netFlux
+      });
+    });
+  });
+
+  return curves;
+}
+function normalizeCurve(curve) {
+  const mean = curve.reduce((s,p)=>s+p.flux,0) / curve.length;
+  return curve.map(p => ({
+    time: p.time,
+    flux: p.flux / mean
+  }));
 }
