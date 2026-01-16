@@ -11,8 +11,9 @@ const { fetchBuffer } = require('./utils');
     }
 
     // 🔬 TESTI: haetaan vain ensimmäinen FITS
+    console.log(urls[0])
     const rawFits = await fetchBuffer(urls[0]);
-
+    console.log(rawFits)
     parentPort.postMessage({
       success: true,
       data: rawFits,

@@ -6,7 +6,8 @@
 const btn = document.getElementById('fetch-btn');
 const canvasContainer = document.getElementById('canvas-container');
 const headerContainer = document.getElementById('fitsHeader');
-
+// ==================== PHOTOMETRY STORAGE ====================
+const photometryFrames = [];
 // -------------------- CONFIG --------------------
 /** Globaalit renderöintiasetukset – käytetään kaikkialla */
 const RENDER_OPTIONS = {
@@ -16,10 +17,15 @@ const RENDER_OPTIONS = {
 };
 
 // -------------------- HELPERS --------------------
+
+function parseFitsDate(str) {
+  if (!str) return null;
+  return new Date(str.replace(/'/g, '').trim());
+}
 function randomCutoutParams() {
   const ra = (Math.random() * 360).toFixed(5);
   const dec = (Math.random() * 180 - 90).toFixed(5);
-  const size = 60; // degrees
+  const size = 65; // degrees
   return { ra, dec, size };
 }
 
@@ -73,7 +79,7 @@ btn.onclick = async () => {
   try {
     // 1️⃣ Parametrit
     const { ra, dec, size } = randomCutoutParams();
-    const url = `/fits?ra=${ra}&dec=${dec}&size=${size}&stack=1&mode=raw`;
+    const url = `/fits?ra=${ra}&dec=${dec}&size=25&stack=1&mode=raw`;
 
     console.log('FITS request:', url);
 
@@ -140,6 +146,74 @@ btn.onclick = async () => {
         std: Math.sqrt(Math.max(variance, 0))
       };
     }
+    async function fetchFits(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+      const json = await res.json();
+    
+      return {
+        lightCurve: json.lightCurve
+      };
+    }
+    
+
+    // Hae FITS-data
+    const fitsData = await fetchFits(`/fits/tess?ra=${ra}&dec=${dec}`);
+    console.log('fitsData:', fitsData);
+
+    // Valmistele dataset array Chart.js:lle
+    const datasets = fitsData.lightCurve.map((curve, index) => {
+      return {
+        label: `LC ${index + 1}`,
+        data: curve.time,
+        borderColor: `hsl(${(index * 360) / fitsData.lightCurve.length}, 70%, 50%)`,
+        fill: false,
+        pointRadius: 0,
+        tension: 0  // suoraviivainen viiva
+      };
+    });
+    let datasets2 = []
+    fitsData.lightCurve.forEach((curve) => {
+      curve.flux.forEach((flux) => {
+        datasets2.push((time/flux))
+      })
+    })
+    console.log(datasets2)
+    
+
+    // Luo Chart.js-instanssi
+    const ctx = document.getElementById('lightCurveChart').getContext('2d');
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: 'Time and Flux',
+        datasets: [{
+          label: 'Curve',
+          data: datasets2,
+          borderColor: "#FFF",
+          backgroundColor: "#000000",
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: { 
+            type: 'linear', 
+            title: { display: true, text: 'Time [d]' } 
+          },
+          y: { 
+            title: { display: true, text: 'Flux' } 
+          }
+        },
+        plugins: {
+          legend: { display: true }
+        }
+      }
+    });
+
+    
+
+
     // ⭐ Noise
     const noiseStats = computeNoiseStats(image1D);
 
@@ -153,6 +227,24 @@ btn.onclick = async () => {
     );
     
     console.log('Photometry done:', measuredStars.length);
+
+      // ==================== STORE FRAME ====================
+      const frameTime = parseFitsDate(headerData['DATE-OBS']) || parseFitsDate(headerData['DATE']) || Date.now();
+
+      photometryFrames.push({
+        time: frameTime,
+        stars: measuredStars.map((s, i) => ({
+          id: i,
+          x: s.x,
+          y: s.y,
+          netFlux: s.netFlux
+        }))
+      });
+
+      console.log(
+      `Photometry frames stored: ${photometryFrames.length}`
+      );
+
 
     console.log('FITS loaded:', width, height, 'BITPIX:', bitpix);
 
@@ -199,6 +291,17 @@ btn.onclick = async () => {
     btn.disabled = false;
     btn.textContent = 'Hae FITS';
   }
+};
+document.getElementById('analyzeTransit').onclick = () => {
+  if (photometryFrames.length < 10) {
+    alert('Tarvitaan vähintään 10 FITS-framea');
+    return;
+  }
+
+  const curves = buildLightCurves(photometryFrames);
+  const results = detectTransitSignals(curves);
+
+  console.log('Transit analysis:', results);
 };
 
 /**
@@ -340,10 +443,9 @@ function pixelToWorld(x, y, hdr) {
    ------------------------------------------------------------ */
 function extractUsefulHeaderInfo(rawHeader) {
   const hdr = parseFitsHeader(rawHeader);
-
   // Perusinfo
   const objectName = hdr.OBJECT || '—';
-  const dateObs    = hdr['DATE-OBS'] ? fitsDateToJS(hdr['DATE-OBS']) : null;
+  const dateObs    = parseFitsDate(hdr['DATE-OBS']) ? parseFitsDate(hdr['DATE-OBS']) : null;
   const exposure   = hdr.EXPOSURE ? parseFloat(hdr.EXPOSURE) :
                      (hdr.EXPTIME ? parseFloat(hdr.EXPTIME) : null);
 

@@ -269,57 +269,23 @@ function computePercentiles(data, low = 0.01, high = 0.99) {
     const hi = clean[Math.floor(clean.length * high)];
   
     return { min: lo, max: hi };
-  }
-  
-function parseFits(buffer) {
-    const header = {};
-    let offset = 0;
-  
-    while (true) {
-      const card = buffer.toString('ascii', offset, offset + 80);
-      offset += 80;
-  
-      const key = card.substring(0, 8).trim();
-      let value = card.substring(10, 80).trim();
-  
-      // Poistetaan kaikki "/" ja sen jälkeinen osa
-      if (value.includes('/')) value = value.split('/')[0].trim();
-  
-      if (key) header[key] = value;
-      if (key === 'END') break;
-    }
-  
-    // align to 2880
-    offset = Math.ceil(offset / 2880) * 2880;
-  
-    const width  = Number(header.NAXIS1);
-    const height = Number(header.NAXIS2);
-    const bitpix = Number(header.BITPIX);
-  
-    if (isNaN(width) || isNaN(height)) {
-      throw new Error(`Invalid FITS header: NAXIS1=${header.NAXIS1}, NAXIS2=${header.NAXIS2}`);
-    }
-  
-    const pixelCount = width * height;
-    let data;
-  
-    if (bitpix === 16) {
-      data = new Float32Array(pixelCount);
-      for (let i = 0; i < pixelCount; i++) {
-        data[i] = buffer.readInt16BE(offset + i * 2);
-      }
-    } else if (bitpix === 32) {
-      data = new Float32Array(pixelCount);
-      for (let i = 0; i < pixelCount; i++) {
-        data[i] = buffer.readInt32BE(offset + i * 4);
-      }
-    } else {
-      throw new Error(`Unsupported BITPIX: ${bitpix}`);
-    }
-  
-    return { header, width, height, data };
 }
-  
+function parseFitsFast(uint8) {
+  const text = new TextDecoder().decode(uint8);
+
+  let headerEnd = text.indexOf('END');
+  headerEnd = Math.ceil((headerEnd + 80) / 2880) * 2880;
+
+  // oletus: FLOAT32 FITS (TESS jne)
+  const dataOffset = headerEnd;
+  const dataBytes = uint8.byteLength - dataOffset;
+
+  return new Float32Array(
+    uint8.buffer,
+    uint8.byteOffset + dataOffset,
+    dataBytes / 4
+  );
+}
 function writeFits(header, width, height, data) {
     const cards = [];
   
@@ -346,14 +312,138 @@ function writeFits(header, width, height, data) {
   
     return Buffer.concat([headerBuf, dataBuf]);
 }
-  
-  
-async function fetchBuffer(url) {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
-    const arrayBuffer = await res.arrayBuffer();
-    return Buffer.from(arrayBuffer);
+
+function selectReferenceStar(frame) {
+  const { data, width, height } = frame;
+  let max = -Infinity;
+  let pos = { x: 0, y: 0 };
+
+  for (let y = 50; y < height - 50; y++) {
+    for (let x = 50; x < width - 50; x++) {
+      const v = data[y * width + x];
+      if (v > max) {
+        max = v;
+        pos = { x, y };
+      }
+    }
+  }
+
+  return pos;
 }
+
+function aperturePhotometry(frame, cx, cy, r = 3) {
+  const { data, width } = frame;
+  let sum = 0;
+
+  for (let y = -r; y <= r; y++) {
+    for (let x = -r; x <= r; x++) {
+      const dx = cx + x;
+      const dy = cy + y;
+      const idx = dy * width + dx;
+      if (idx >= 0 && idx < data.length) {
+        sum += data[idx];
+      }
+    }
+  }
+  return sum;
+}
+
+  
+async function fetchBuffer(url, retries = 4, timeoutMs = 120_000) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), timeoutMs);
+
+      const res = await fetch(url, { signal: controller.signal });
+      console.log(res)
+      clearTimeout(t);
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const ctype = res.headers.get('content-type') || '';
+      if (!ctype.toLowerCase().includes('fits')) {
+        throw new Error(`Not FITS (Content-Type=${ctype})`);
+      }
+
+      const arrayBuffer = await res.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+
+    } catch (err) {
+      lastError = err;
+      console.warn(`fetchBuffer retry ${attempt}/${retries} failed: ${err}`);
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 2 ** attempt * 1000));
+      }
+    }
+  }
+
+  throw new Error(`fetchBuffer failed: ${lastError.message}`);
+}
+function parseFits(buffer) {
+  const header = {};
+  let offset = 0;
+
+  // --- Lue header ---
+  while (true) {
+      const card = buffer.toString('ascii', offset, offset + 80);
+      offset += 80;
+
+      const key = card.substring(0, 8).trim();
+      let value = card.substring(10, 80).trim();
+
+      // Poista kommentit "/" jälkeen
+      if (value.includes('/')) value = value.split('/')[0].trim();
+
+      if (key) header[key] = value;
+      if (key === 'END') break;
+  }
+
+  // align to 2880
+  offset = Math.ceil(offset / 2880) * 2880;
+
+  const bitpix = Number(header.BITPIX || 0);
+  const naxis = Number(header.NAXIS || 0);
+  const width  = Number(header.NAXIS1 || 0);
+  const height = Number(header.NAXIS2 || 0);
+
+  let data = null;
+
+  // --- Jos ei dataa, palauta vain header ---
+  if (naxis === 0 || width === 0 || height === 0) {
+      console.log(`No data in FITS (BITPIX=${bitpix}, NAXIS=${naxis})`);
+      return { header, width, height, data };
+  }
+
+  const pixelCount = width * height;
+
+  // --- Lue data vain tuetuilla BITPIX-arvoilla ---
+  if (bitpix === 16) {
+      data = new Float32Array(pixelCount);
+      for (let i = 0; i < pixelCount; i++) {
+          data[i] = buffer.readInt16BE(offset + i * 2);
+      }
+  } else if (bitpix === 32) {
+      data = new Float32Array(pixelCount);
+      for (let i = 0; i < pixelCount; i++) {
+          data[i] = buffer.readInt32BE(offset + i * 4);
+      }
+  } else if (bitpix === -32) {
+      data = new Float32Array(pixelCount);
+      for (let i = 0; i < pixelCount; i++) {
+          data[i] = buffer.readFloatBE(offset + i * 4);
+      }
+  } else {
+      console.log(`Unsupported BITPIX: ${bitpix}, skipping data`);
+      data = null;
+  }
+
+  return { header, width, height, data };
+}
+
 function merge4Fits2x2Enhanced(buffers) {
     if (!buffers || buffers.length !== 4) {
         throw new Error("Exactly 4 FITS buffers required");
@@ -414,7 +504,77 @@ function merge4Fits2x2Enhanced(buffers) {
 
     return writeFits(newHeader, outWidth, outHeight, outData);
 }
+/**
+ * Hakee TESS light curve -tiedostojen URLit annetuille RA/DEC koordinaateille.
+ * @param {number} ra RA-arvo asteina
+ * @param {number} dec DEC-arvo asteina
+ * @param {number} radius Hakualue radiaaneina (esim. 0.01)
+ * @returns {Promise<string[]>} Lista FITS-tiedosto-URL:eja
+ */
+async function fetchTessFitsUrls(ra, dec, radius = 0.01) {
+  // 1️⃣ Hae ensin TICID RA/DEC:llä
+  const ticBody = {
+    request: {
+      service: "Mast.Catalogs.Filtered.Tic.Position",
+      format: "json",
+      params: { ra, dec, radius }
+    }
+  };
 
+  const ticRes = await fetch('https://mast.stsci.edu/api/v0/invoke', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(ticBody)
+  });
+
+  if (!ticRes.ok) throw new Error(`TIC lookup failed: ${ticRes.status}`);
+  const ticData = await ticRes.json();
+
+  if (!ticData.data || !ticData.data.length) {
+    throw new Error('No TIC objects found for these coordinates');
+  }
+
+  // Käytetään ensimmäistä löydettyä kohdetta
+  const ticId = ticData.data[0].ID;
+
+  // 2️⃣ Hae LightCurve-tiedostojen lista TICID:n perusteella
+  const lcBody = {
+    request: {
+      service: "Mast.Catalogs.Filtered.Tic.LightCurve",
+      format: "json",
+      params: {
+        columns: "tessname,obsid,productFilename,sector",
+        filters: [
+          { paramName: "tic_id", values: [ticId] }
+        ]
+      }
+    }
+  };
+
+  const lcRes = await fetch('https://mast.stsci.edu/api/v0/invoke', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(lcBody)
+  });
+
+  if (!lcRes.ok) throw new Error(`TESS light curve search failed: ${lcRes.status}`);
+  const lcData = await lcRes.json();
+
+  if (!lcData.data || !lcData.data.length) {
+    throw new Error('No light curve files found for TICID ' + ticId);
+  }
+
+  // 3️⃣ Palauta FITS-tiedostojen URLit
+  const fitsUrls = lcData.data
+    .filter(f => f.productFilename && f.productFilename.endsWith('lc.fits'))
+    .map(f => `https://mast.stsci.edu/api/v0.1/Download/file?uri=${f.productFilename}`);
+
+  if (fitsUrls.length === 0) {
+    throw new Error('No lc.fits files available for TICID ' + ticId);
+  }
+
+  return fitsUrls;
+}
 /* --------------------------------------------------
    Exports
 -------------------------------------------------- */
@@ -426,4 +586,9 @@ module.exports = {
   merge4Fits2x2Enhanced,
   fetchBuffer,
   parseFitsData,
+  selectReferenceStar,
+  aperturePhotometry,
+  parseFits,
+  parseFitsFast,
+  fetchTessFitsUrls,
 };

@@ -29,16 +29,18 @@
 <body>
   <div class='content'>
     <header>
-      <h1>FitsImageAnalyzer</h1>
-      <h2>Hae uusi FITS-kuva</h2>
-      <button id="fetch-btn">Hae kuva</button>
+      <h1>FitsImageAnalyzer | The exoplanet hunter</h1>
+      <h2>Search tools</h2>
+      <button id="fetch-btn">Search on random</button>
+      <button id="analyzeTransit">Analyze transitions</button>
     </header>
 
     <div class="page">
       <section>
-        <h2>Valon vahvistettu .FITS kuva</h2>
+        <h2>Image .FITS kuva</h2>
         <div id="canvas-container" style="float: left;"></div>
       </section>
+      <canvas id="lightCurveChart" width="800" height="400"></canvas>
     </div>
     <div class="page">
       <section class="fits-panel">
@@ -67,6 +69,7 @@
       </section>
     </div>
   </div>
+  <script src="/js/chart.js"></script>
   <script type="text/javascript" src="/js/main.js"></script>
 </body>
 </html>
